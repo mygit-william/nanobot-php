@@ -1,0 +1,4 @@
+vendor/
+config.json
+storage/context/
+src/backend/workspace/

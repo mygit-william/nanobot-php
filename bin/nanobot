@@ -1,0 +1,51 @@
+#!/usr/bin/env php
+<?php
+
+require __DIR__ . '/../vendor/autoload.php';
+
+use App\Core\Agent;
+use App\LLM\LLMFactory;
+use App\Channels\CLIChannel;
+use App\Channels\DingTalkChannel;
+
+// 1. 加载 JSON 配置
+$configFile = __DIR__ . '/../config.json';
+if (!file_exists($configFile)) {
+    die("❌ 配置文件不存在: $configFile\n");
+}
+$config = json_decode(file_get_contents($configFile), true);
+//json_decode 失败会返回 null
+if ($config === null) {
+    echo json_last_error_msg();
+    die("❌ 无法解析配置文件: $configFile\n");
+}
+// 2. 创建 LLM 工厂
+// 我们只传递 LLM 相关的配置给工厂，保持解耦
+$llmFactory = new LLMFactory($config['llm']);
+$llm=$llmFactory->make();
+// 3. 创建 Agent
+$agent = new Agent($llm);
+
+$mode = $argv[1] ?? 'cli';
+
+if ($mode === 'cli') {
+    $channel = new CLIChannel($agent);
+    $channel->receive();
+
+} elseif ($mode === 'serve') {
+    // 4. 获取钉钉配置
+    $dingtalkConfig = $config['channels']['dingtalk'] ?? [];
+    
+    if (!($dingtalkConfig['enabled'] ?? false)) {
+        die("❌ 钉钉通道未启用，请检查 config.json\n");
+    }
+
+    echo "🚀 启动钉钉服务 (默认模型: {$config['llm']['default_provider']})...\n";
+    
+    // 5. 启动钉钉通道
+    $dingTalkChannel = new DingTalkChannel($agent, $dingtalkConfig);
+    // $dingTalkChannel->receive();
+
+} else {
+    echo "❌ 未知模式: $mode\n";
+}

@@ -1,0 +1,40 @@
+{
+  "app": {
+    "name": "PHP-Nanobot",
+    "debug": true
+  },
+  "llm": {
+    "default_provider": "zhipu",
+    "providers": {
+      "ollama": {
+        "driver": "ollama",
+        "base_url": "http://localhost:11434",
+        "model": "qwen:7b"
+      },
+      "zhipu": {
+        "driver": "zhipu",
+        "base_url": "https://open.bigmodel.cn",
+        "model": "glm-5",
+        "api_key": "sk-your-openai-key-here"
+      },
+      "openai": {
+        "driver": "openai",
+        "api_key": "sk-your-openai-key-here",
+        "model": "gpt-3.5-turbo"
+      },
+      "dashscope": {
+        "driver": "dashscope",
+        "api_key": "sk-your-dashscope-key",
+        "model": "qwen-turbo"
+      }
+    }
+  },
+  "channels": {
+    "dingtalk": {
+      "enabled": false,
+      "app_key": "app_key",
+      "app_secret": "app_secret",
+      "webhook_url": "你的钉钉机器人Webhook"
+    }
+  }
+}
