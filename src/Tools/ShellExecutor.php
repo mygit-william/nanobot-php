@@ -11,7 +11,7 @@ class ShellExecutor
      * 执行 Shell 命令
      * 对应 OpenClaw 的 exec 工具
      */
-    public function exec(string $command, string $cwd = null): string
+    public function exec(string $command, ?string $cwd = null): string
     {
         // 1. 安全检查 (白名单/黑名单)
         $this->securityCheck($command);

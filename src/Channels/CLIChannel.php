@@ -32,7 +32,7 @@ class CLIChannel implements ChannelInterface
     {
         echo "🤖 PHP-Nanobot 已启动 (CLI模式)\n";
         echo "输入 'exit' 退出\n\n";
-
+        $history = [];
         while (true) {
             echo "👤 你: ";
             $input = trim(fgets(STDIN));
@@ -44,9 +44,9 @@ class CLIChannel implements ChannelInterface
             if (empty($input)) {
                 continue;
             }
-
-            // 这里的 sessionId 固定为 'cli_user'，保证 CLI 下记忆连贯
-            $reply = $this->agent->chat('cli_user', $input);
+            
+            // 这里的 sessionId 固定为 'cli_user'，保证 CLI 下记忆连贯  loop
+            $reply = $this->agent->chat('cli_user', $input,$payload);
             
             echo "🤖 AI: $reply\n\n";
         }

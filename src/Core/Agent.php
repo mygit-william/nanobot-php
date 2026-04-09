@@ -19,7 +19,7 @@ class Agent
         $this->skillManager = new SkillManager();
     }
 
-    public function chat(string $sessionId, string $input,array $messages=[]): string
+    public function chat(string $sessionId, string $input,array &$messages=[]): string
     {
         // 1. 准备上下文
         $context = $this->loadContext($sessionId);
@@ -31,29 +31,45 @@ class Agent
         
         // 3. 组装消息
         $messages = [
-            ['role' => 'system', 'content' => $systemPrompt],
-            ...$context,
+            ...$messages,
             ['role' => 'user', 'content' => $input]
         ];
         // 2. 获取可用工具定义 (OpenClaw 标准)
         // 这里我们将 ShellExecutor 包装成一个 Tool 定义传给 LLM
         $tools = [
+             [
+                "type" => "function",
+                "function" => [
+                    "name" => "bash",
+                    "description" => "Run a shell command in the current workspace.",
+                    "parameters" => [
+                        "type" => "object",
+                        "properties" => [
+                            "command" => [
+                                "type" => "string",
+                                "description" => "要执行的命令"
+                            ]
+                        ],
+                        "required" => ["command"]
+                    ]
+                ]
+            ],
             [
                 'type' => 'function',
                 'function' => [
-                    'name' => 'exec',
-                    'description' => '执行系统 Shell 命令',
+                    'name' => 'write_file',
+                    'description' => 'Write content to file.',
                     'parameters' => [
                         'type' => 'object',
                         'properties' => [
-                            'command' => ['type' => 'string', 'description' => '要执行的 shell 命令'],
+                            'path' => ['type' => 'string'],
+                            'content' => ['type' => 'string'],
                         ],
-                        'required' => ['command']
+                        'required' => ['path','content']
                     ]
                 ]
-            ]
+            ],
         ];
-
         // 3. 执行循环 (ReAct 模式)
         // 为了防止死循环，限制最大步骤数
         $maxSteps = 20;
@@ -62,18 +78,21 @@ class Agent
         while ($step < $maxSteps) {
             $step++;
             // var_dump("第 {$step} 步，当前消息：", $messages);die
-            ;
+            // ;var_dump($tools);
             // 调用 LLM
             $response = $this->llm->chat($messages, $tools);
             $rawAiResponse = $response;
             $response = json_decode($response, true);
-            
-            if (isset($response['tool'])) {
-                # 
-                $messages[] = ['role' => 'assistant', 'content' => $rawAiResponse];
-                $params = $response['params'];
-                $hasToolCall = false;
-                switch ($response['tool']) {
+            $messages[] = ['role' => 'assistant', 'content' => $response['reply']];
+            if (isset($response['tool'])&&!empty($response['tool'])) {
+                $tool = $response['tool'][0]['function'];
+                $params = $tool['arguments'];
+                $hasToolCall = false;var_dump('parrr',$params);
+                $params = json_decode($params, true);
+                // foreach ($response['tool'] as $k => $v) {
+                //     # code...
+                // }
+                switch ($tool['name']) {
                     case 'read_file':
                         $hasToolCall = true;
                         $filePath = $params['path'] ?? '';
@@ -108,73 +127,32 @@ class Agent
                         }
                         break;
 
-                    case 'terminal':
+                    case 'bash':
                         $hasToolCall = true;
                         $command = $params['command'] ?? '';
+ 
                         $toolOutput = shell_exec($command . ' 2>&1');
                         break;
 
                     default:
                         $hasToolCall = false;
-                        $toolOutput = "未知工具: " . $params['tool'];
+                        $toolOutput = "未知工具: " . $tool['name'];
                         break;
                 }
                 if ($hasToolCall) {
-                    $messages[] = ['role' => 'user', 'content' => '执行工具:'. $response['tool'].',结果返回:' . $toolOutput];
+                    $messages[] = ['role' => 'user', 'content' => '执行工具:'. $tool['name'].',结果返回:' . $toolOutput];
                     echo "\n--- 工具执行结果已加入历史 ---\n";
+                    var_dump('执行工具:'. $tool['name'].',结果返回:' . $toolOutput);
                     // $toolCalls++;
                     continue;
                 }
             } else {
-               
-                if (isset($response['confidence']) && $response['confidence'] ==0) {
-                    continue;
-                }
                  // 非JSON → 普通回复，结束本轮
                 $messages[] = ['role' => 'user', 'content' => $response['reply']];
-                $this->saveContext($sessionId, $input, $response['reply']);
+                // $this->saveContext($sessionId, $input, $response['reply']);
                 echo "\n[最终AI回复]\n";
                 return $response['reply'] . "\n";
-                // break;
-
-                // $copy=$messages;
-                // var_dump("LLM 回复：", $response,array_pop($copy));;
-                // 情况 A: LLM 直接回复文本（任务完成）
-                // if (isset($response['content']) && empty($response['tool'])) {
-                //     $this->saveContext($sessionId, $input, $response['content']);
-                //     return $response['content'];
-                // }
             }
-            //TODO: 情况 B: LLM 要求调用工具
-            // if (isset($response['tool'])) {
-            //     $toolCall = $response['tool'];
-            //     $toolName = $toolCall['function']['name'];
-            //     $args = json_decode($toolCall['function']['arguments'], true);
-
-            //     echo "🛠️ 正在执行: {$toolName} -> " . $args['command'] . "\n";
-
-            //     // --- 核心：PHP 执行 AI 生成的命令 ---
-            //     $observation = '';
-            //     if ($toolName === 'exec') {
-            //         try {
-            //             $observation = $this->executor->exec($args['command']);
-            //         } catch (\Exception $e) {
-            //             $observation = $e->getMessage();
-            //         }
-            //     }
-
-            //     // 将“工具调用”和“执行结果”加入上下文
-            //     $messages[] = ['role' => 'assistant', 'content' => null, 'tool_calls' => $response['tool_calls']];
-            //     $messages[] = [
-            //         'role' => 'tool', 
-            //         'name' => $toolName, 
-            //         'content' => $observation, // 把命令执行结果喂回给 AI
-            //         'tool_call_id' => $toolCall['id']
-            //     ];
-
-            //     // 继续循环，让 AI 根据执行结果决定下一步
-            //     continue;
-            // }
         }
 
         return "执行达到最大步骤限制，请检查逻辑。";
@@ -182,14 +160,14 @@ class Agent
 
 
     // ... (loadContext, saveContext, loadLongTermMemory 方法保持不变) ...
-    private function loadContext(string $sessionId): array
+    public function loadContext(string $sessionId): array
     { /* ... */
         $file = "storage/context/{$sessionId}.json";
         if (file_exists($file))
             return json_decode(file_get_contents($file), true);
         return [];
     }
-    private function getSystemPrompt(){
+    public function getSystemPrompt(){
         $sm = new SkillManager();
         $sm->getToolsDefinition();
         return ;

@@ -10,5 +10,5 @@ interface LLMInterface
      * @param array $tools 工具/技能定义列表
      * @return string 模型返回的文本内容
      */
-    public function chat(array $messages, array $tools = []): string;
+    public function chat(array &$messages, array $tools = []): string;
 }

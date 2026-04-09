@@ -18,7 +18,7 @@ class LLMFactory
     /**
      * 创建指定的 LLM 实例
      */
-    public function make(string $providerKey = null): LLMInterface
+    public function make(?string $providerKey = null): LLMInterface
     {
         // 如果没有指定，使用默认配置
         $providerKey = $providerKey ?? $this->config['default_provider'];

@@ -22,26 +22,37 @@ if ($config === null) {
 // 2. 创建 LLM 工厂
 // 我们只传递 LLM 相关的配置给工厂，保持解耦
 $llmFactory = new LLMFactory($config['llm']);
-$llm=$llmFactory->make();
+$llm = $llmFactory->make();
 // 3. 创建 Agent
 $agent = new Agent($llm);
 
 $mode = $argv[1] ?? 'cli';
 
+$context = [];// $agent->loadContext('cli-user');
+// 2. 构建 System Prompt
+$systemPrompt = file_get_contents(__DIR__ . "/../storage/AGENTS.md");
+$systemPrompt .= $agent->getSystemPrompt();
+if (!empty($longTermMemory)) {
+    $systemPrompt .= "\n\n## 长期记忆\n{$longTermMemory}";
+}
+$history = [
+    ['role' => 'system', 'content' => $systemPrompt],
+    ...$context,
+];
 if ($mode === 'cli') {
     $channel = new CLIChannel($agent);
-    $channel->receive();
+    $channel->receive($history);
 
 } elseif ($mode === 'serve') {
     // 4. 获取钉钉配置
     $dingtalkConfig = $config['channels']['dingtalk'] ?? [];
-    
+
     if (!($dingtalkConfig['enabled'] ?? false)) {
         die("❌ 钉钉通道未启用，请检查 config.json\n");
     }
 
     echo "🚀 启动钉钉服务 (默认模型: {$config['llm']['default_provider']})...\n";
-    
+
     // 5. 启动钉钉通道
     $dingTalkChannel = new DingTalkChannel($agent, $dingtalkConfig);
     // $dingTalkChannel->receive();
