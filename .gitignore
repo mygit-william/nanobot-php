@@ -2,3 +2,7 @@ vendor/
 config.json
 storage/context/
 src/backend/workspace/
+.gitnexus
+.idea
+.claude
+

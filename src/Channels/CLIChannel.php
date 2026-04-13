@@ -28,28 +28,83 @@ class CLIChannel implements ChannelInterface
     /**
      * 启动通道（这里是死循环监听终端输入）
      */
-    public function receive(array $payload = []): void
+    public function receive(array $conservation = []): void
     {
+        // 设置正确的编码
+        $this->setupEncoding();
+
         echo "🤖 PHP-Nanobot 已启动 (CLI模式)\n";
         echo "输入 'exit' 退出\n\n";
 
-        while (true) {
-            echo "👤 你: ";
-            $input = trim(fgets(STDIN));
+        // 隐藏光标
+        echo "\033[?25l";
 
-            if ($input === 'exit') {
-                echo "👋 再见！\n";
-                break;
-            }
-            if (empty($input)) {
-                continue;
-            }
+        try {
+            while (true) {
+                echo "\033[?25h👤 : "; // 显示光标用于输入
+                $input = trim(fgets(STDIN));
+                echo "\033[?25l"; // 输入完成后隐藏光标
 
-            // 这里的 sessionId 固定为 'cli_user'，保证 CLI 下记忆连贯
-            $reply = $this->agent->chat('cli_user', $input);
-            
-            echo "🤖 AI: $reply\n\n";
+                if ($input === 'exit') {
+                    echo "\033[?25h"; // 退出前显示光标
+                    echo "👋 再见！\n";
+                    break;
+                }
+                if (empty($input)) {
+                    continue;
+                }
+
+                // 处理中文编码
+                $input = $this->handleChineseEncoding($input);
+
+                // 这里的 sessionId 固定为 'cli_user'，保证 CLI 下记忆连贯  loop
+                $reply = $this->agent->chat('cli_user', $input, $conservation);
+
+                echo "🤖 : $reply\n";
+            }
+        } finally {
+            // 确保程序退出时恢复光标显示
+            echo "\033[?25h";
         }
+    }
+
+    /**
+     * 设置正确的编码环境
+     */
+    private function setupEncoding(): void
+    {
+        // 设置内部编码为UTF-8
+        if (function_exists('mb_internal_encoding')) {
+            mb_internal_encoding('UTF-8');
+        }
+
+        // 设置HTTP输出编码为UTF-8
+        if (function_exists('mb_http_output')) {
+            mb_http_output('UTF-8');
+        }
+
+        // 尝试设置终端编码为UTF-8 (Windows)
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            exec('chcp 65001 > nul');
+        }
+    }
+
+    /**
+     * 处理中文编码问题
+     */
+    private function handleChineseEncoding(string $input): string
+    {
+        // 检测输入编码
+        if (function_exists('mb_detect_encoding')) {
+            $encoding = mb_detect_encoding($input, ['UTF-8', 'GBK', 'GB2312', 'ASCII'], true);
+
+            if ($encoding && $encoding !== 'UTF-8') {
+                // 转换编码为UTF-8
+                $input = mb_convert_encoding($input, 'UTF-8', $encoding);
+            }
+        }
+
+        return $input;
     }
 
     /**
