@@ -3,7 +3,7 @@
 namespace App\LLM;
 use App\Utils\LoadingAnimation;
 
-class ZhipuAdapter implements LLMInterface
+class LongcatAdapter implements LLMInterface
 {
     private string $model;
     private string $baseUrl;
@@ -20,7 +20,7 @@ class ZhipuAdapter implements LLMInterface
     {
         try {
             $response = $this->sendChatRequest(
-                $this->baseUrl . "api/paas/v4/chat/completions",//'/v1/chat/completions',
+                $this->baseUrl . '/v1/chat/completions',
                 $this->model,
                 $this->apiKey,
                 $messages,
@@ -76,6 +76,20 @@ class ZhipuAdapter implements LLMInterface
         //ssl
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);  // ⚠️ 仅测试环境使用
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);  // 关闭主机名验证
+        //         curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+        // curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function($resource, $download_size, $downloaded, $upload_size, $uploaded) use (&$last_spinner_update) {
+        //     $now = time();
+        //     if (1||$now - $last_spinner_update >= 1) {
+        //         // 显示spinner
+        //         echo "\r" . str_repeat(' ', 50) . "\r";
+        //         $spinner_chars =['.', '..', '...', '....'];;
+        //         static $spinner_index = 0;
+        //         echo " " . $spinner_chars[$spinner_index % (count($spinner_chars)-1)] ;//. " ".$now;
+        //         $spinner_index++;
+        //         $last_spinner_update = $now;
+        //     }
+        //     return 0;
+        // });
         $animation = new LoadingAnimation("AI思考中");
         $animation->start();
         // echo "curl开始...\n";
@@ -84,11 +98,11 @@ class ZhipuAdapter implements LLMInterface
         // echo "curl结束...\n";
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
-        echo '原始messages数据:' . json_encode($messages,JSON_UNESCAPED_UNICODE ) . PHP_EOL;
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            echo "JSON解析错误: " . json_last_error_msg() . "\n";
-        }
-        echo '原始响应数据:' . $response . PHP_EOL;
+        // echo '原始messages数据:' . json_encode($messages,JSON_UNESCAPED_UNICODE ) . PHP_EOL;
+        // if (json_last_error() !== JSON_ERROR_NONE) {
+        //     echo "JSON解析错误: " . json_last_error_msg() . "\n";
+        // }
+        // echo '原始响应数据:' . $response . PHP_EOL;
         curl_close($ch);
 
         if ($curlError) {

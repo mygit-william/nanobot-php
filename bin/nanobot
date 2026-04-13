@@ -1,12 +1,12 @@
 #!/usr/bin/env php
 <?php
-
+declare(strict_types=1);
 require __DIR__ . '/../vendor/autoload.php';
-
 use App\Core\Agent;
 use App\LLM\LLMFactory;
 use App\Channels\CLIChannel;
 use App\Channels\DingTalkChannel;
+use App\Skills\SkillManager;
 
 // 1. 加载 JSON 配置
 $configFile = __DIR__ . '/../config.json';
@@ -30,18 +30,52 @@ $mode = $argv[1] ?? 'cli';
 
 $context = [];// $agent->loadContext('cli-user');
 // 2. 构建 System Prompt
+$machineInfo = sprintf("
+            ### 工作目录
+            工作目录在 %s 下,`MEMORY.md`在%s的目录下.
+            我在windows11系统下运行,", realpath(__DIR__ . '/../storage'), realpath(__DIR__ . '/../storage/memory'));
 $systemPrompt = file_get_contents(__DIR__ . "/../storage/AGENTS.md");
+$systemPrompt .= $machineInfo;
 $systemPrompt .= $agent->getSystemPrompt();
+// $skills = new SkillManager();
+// $skills->loadSkills();
+// $skillstr='';
+// foreach ($skills->skills as $k => $v) {
+//     var_dump($v);die;
+//     $skillstr.="<name>{$k}</name><description>{$v->description}</description>";
+// }
+// var_dump($skillstr);
+// var_dump($skills->skills);
+//die;
 if (!empty($longTermMemory)) {
     $systemPrompt .= "\n\n## 长期记忆\n{$longTermMemory}";
 }
-$history = [
+$conservation = [
     ['role' => 'system', 'content' => $systemPrompt],
     ...$context,
 ];
 if ($mode === 'cli') {
-    $channel = new CLIChannel($agent);
-    $channel->receive($history);
+    function main($agent, $conservation)
+    {
+        $channel = new CLIChannel($agent);
+        $channel->receive($conservation);
+    }
+    if (extension_loaded('swoole')) {
+        echo "Swoole 扩展已安装并加载。\n";
+        // --- 关键步骤：启用协程 Hook，这会使 cURL 变得非阻塞 ---
+        \Swoole\Runtime::enableCoroutine(SWOOLE_HOOK_ALL);
+        // 可以安全地使用 Swoole 的功能
+        // 例如获取版本号
+        echo "Swoole 版本: " . swoole_version() . "\n";
+        // 启动主协程
+        \Swoole\Coroutine::create('main', $agent, $conservation);
+        \Swoole\Event::wait();
+    } else {
+        $channel = new CLIChannel($agent);
+        $channel->receive($conservation);
+        // echo "错误: Swoole 扩展未安装或未在当前 PHP 环境中启用。\n";
+        // exit(1); // 或采取其他措施
+    }
 
 } elseif ($mode === 'serve') {
     // 4. 获取钉钉配置
