@@ -1,0 +1,62 @@
+{
+  "description": "生产环境权限配置",
+  "mode": "plan",
+
+  "write_tools": ["write_file", "edit_file", "delete_file", "bash"],
+  "read_only_tools": ["read_file", "web_search", "web_fetch"],
+
+  "custom_rules": [
+    {
+      "tool_name": "read_file",
+      "params": {"path": "/etc/passwd"},
+      "action": "deny",
+      "description": "禁止读取系统用户文件"
+    },
+    {
+      "tool_name": "read_file",
+      "params": {"path": "/proc/meminfo"},
+      "action": "ask",
+      "description": "系统信息查询需要确认"
+    },
+    {
+      "tool_name": "bash",
+      "params": {"command": "ps aux"},
+      "action": "ask",
+      "description": "进程查看需要确认"
+    },
+    {
+      "tool_name": "bash",
+      "params": {"command": "netstat"},
+      "action": "ask",
+      "description": "网络状态查看需要确认"
+    },
+    {
+      "tool_name": "web_search",
+      "params": {},
+      "action": "allow",
+      "description": "允许安全相关的网络搜索"
+    }
+  ],
+
+  "security_settings": {
+    "max_command_length": 1024,
+    "max_output_length": 524288,
+    "process_timeout": 15,
+    "enable_audit_logging": true,
+    "audit_log_retention_days": 90,
+    "suspicious_activity_detection": true
+  },
+
+  "notifications": {
+    "denied_operations": {
+      "enabled": true,
+      "email_recipients": ["admin@company.com"],
+      "webhook_url": "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+    },
+    "suspicious_activity": {
+      "enabled": true,
+      "threshold": 3,
+      "time_window_minutes": 5
+    }
+  }
+}

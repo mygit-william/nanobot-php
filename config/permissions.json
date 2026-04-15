@@ -1,0 +1,111 @@
+{
+  "description": "PHP-Nanobot 权限配置文件",
+  "version": "1.0.0",
+
+  "modes": {
+    "default": {
+      "description": "默认模式，需要确认所有操作",
+      "write_tools": ["write_file", "edit_file", "delete_file", "bash"],
+      "read_only_tools": ["read_file", "web_search", "web_fetch"]
+    },
+    "plan": {
+      "description": "计划模式，只允许读取操作，禁止写操作",
+      "write_tools": ["write_file", "edit_file", "delete_file", "bash"],
+      "read_only_tools": ["read_file", "web_search", "web_fetch"]
+    },
+    "auto": {
+      "description": "自动模式，只读操作自动通过，写操作需要确认",
+      "write_tools": ["write_file", "edit_file", "delete_file", "bash"],
+      "read_only_tools": ["read_file", "web_search", "web_fetch"]
+    }
+  },
+
+  "custom_rules": [
+    {
+      "tool_name": "write_file",
+      "params": {"path": "/tmp/"},
+      "action": "allow",
+      "description": "允许写入临时目录"
+    },
+    {
+      "tool_name": "write_file",
+      "params": {"path": "/var/log/"},
+      "action": "deny",
+      "description": "禁止写入系统日志目录"
+    },
+    {
+      "tool_name": "bash",
+      "params": {"command": "ls"},
+      "action": "allow",
+      "description": "允许基本的 ls 命令"
+    },
+    {
+      "tool_name": "bash",
+      "params": {"command": "rm -rf"},
+      "action": "deny",
+      "description": "禁止危险删除操作"
+    },
+    {
+      "tool_name": "edit_file",
+      "params": {"operation": "replace"},
+      "action": "ask",
+      "description": "替换操作需要确认"
+    },
+    {
+      "tool_name": "edit_file",
+      "params": {"operation": "append"},
+      "action": "allow",
+      "description": "追加操作自动允许"
+    }
+  ],
+
+  "security_settings": {
+    "max_command_length": 4096,
+    "max_output_length": 1048576,
+    "process_timeout": 30,
+    "enable_audit_logging": true,
+    "audit_log_retention_days": 30
+  },
+
+  "environment_overrides": {
+    "development": {
+      "mode": "auto",
+      "custom_rules": [
+        {
+          "tool_name": "write_file",
+          "params": {"path": "/dev/shm/"},
+          "action": "allow",
+          "description": "开发环境允许写入共享内存"
+        }
+      ]
+    },
+    "staging": {
+      "mode": "plan",
+      "custom_rules": []
+    },
+    "production": {
+      "mode": "plan",
+      "custom_rules": [
+        {
+          "tool_name": "write_file",
+          "params": {"path": "/etc/"},
+          "action": "deny",
+          "description": "生产环境禁止修改系统配置"
+        }
+      ]
+    }
+  },
+
+  "notifications": {
+    "denied_operations": {
+      "enabled": true,
+      "email_recipients": [],
+      "webhook_url": ""
+    },
+    "suspicious_activity": {
+      "enabled": true,
+      "threshold": 5,
+      "time_window_minutes": 10
+    }
+  }
+}

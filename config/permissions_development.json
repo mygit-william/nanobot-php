@@ -1,0 +1,16 @@
+{
+  "description": "开发环境权限配置",
+  "mode": "auto",
+
+  "write_tools": ["write_file", "edit_file", "delete_file", "bash"],
+  "read_only_tools": ["read_file", "web_search", "web_fetch"],
+
+  "custom_rules": [],
+
+  "security_settings": {
+    "max_command_length": 8192,
+    "max_output_length": 2097152,
+    "process_timeout": 60,
+    "enable_audit_logging": true
+  }
+}
