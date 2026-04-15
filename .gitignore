@@ -1,8 +1,12 @@
 vendor/
 config.json
 storage/context/
+storage/cache/
+storage/memory/
 src/backend/workspace/
 .gitnexus
 .idea
 .claude
+storage/*.log
+storage/**/*.json
 
