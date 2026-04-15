@@ -98,11 +98,11 @@ class LongcatAdapter implements LLMInterface
         // echo "curl结束...\n";
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
-        // echo '原始messages数据:' . json_encode($messages,JSON_UNESCAPED_UNICODE ) . PHP_EOL;
-        // if (json_last_error() !== JSON_ERROR_NONE) {
-        //     echo "JSON解析错误: " . json_last_error_msg() . "\n";
-        // }
-        // echo '原始响应数据:' . $response . PHP_EOL;
+        echo '原始messages数据:' . json_encode($messages,JSON_UNESCAPED_UNICODE ) . PHP_EOL;
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            echo "JSON解析错误: " . json_last_error_msg() . "\n";
+        }
+        echo '原始响应数据:' . $response . PHP_EOL;
         curl_close($ch);
 
         if ($curlError) {

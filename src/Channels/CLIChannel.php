@@ -41,8 +41,8 @@ class CLIChannel implements ChannelInterface
 
         try {
             while (true) {
-                echo "\033[?25h👤 : "; // 显示光标用于输入
-                $input = trim(fgets(STDIN));
+    
+                $input = trim(readline("\033[?25h >"));// 显示光标用于输入
                 echo "\033[?25l"; // 输入完成后隐藏光标
 
                 if ($input === 'exit') {
@@ -51,16 +51,35 @@ class CLIChannel implements ChannelInterface
                     break;
                 }
                 if (empty($input)) {
+                    // 显示帮助提示，避免空输入循环
+                    echo "💡 提示: 输入内容开始对话, 'help' 查看命令, 'exit' 退出\n";
+                    continue;
+                }
+                if ($input === 'help') {
+                    echo "📋 可用命令:\n";
+                    echo "  • help - 显示此帮助\n";
+                    echo "  • exit - 退出程序\n";
+                    echo "  • clear - 清屏\n";
+                    echo "  • status - 显示系统状态\n";
+                    echo "  • 输入任意内容开始AI对话\n\n";
+                    continue;
+                }
+                if ($input === 'clear') {
+                    echo "\033[H\033[J"; // 清屏
+                    continue;
+                }
+                if ($input === 'status') {
+                    echo "📊 系统状态: 运行中 | 模式: CLI | 输入 'help' 查看更多\n";
                     continue;
                 }
 
                 // 处理中文编码
-                $input = $this->handleChineseEncoding($input);
+                // $input = $this->handleChineseEncoding($input);
 
                 // 这里的 sessionId 固定为 'cli_user'，保证 CLI 下记忆连贯  loop
                 $reply = $this->agent->chat('cli_user', $input, $conservation);
 
-                echo "🤖 : $reply\n";
+                echo "🤖 : " . trim($reply) . "\n";
             }
         } finally {
             // 确保程序退出时恢复光标显示

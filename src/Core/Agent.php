@@ -7,6 +7,8 @@ namespace App\Core;
 use App\LLM\LLMInterface;
 use App\PermissionChecker;
 use App\Tools\ShellExecutor;
+use App\Tools\WebSearch;
+use App\Tools\WebFetch;
 
 /**
  * 智能代理类
@@ -35,6 +37,16 @@ class Agent
     private ShellExecutor $executor;
 
     /**
+     * Web搜索工具
+     */
+    private WebSearch $webSearch;
+
+    /**
+     * Web内容获取工具
+     */
+    private WebFetch $webFetch;
+
+    /**
      * 项目根路径
      */
     private string $projectRoot;
@@ -53,11 +65,42 @@ class Agent
      * 工作空间目录
      */
     private string $workspaceDir;
+    private array $hooks = [];
 
-    public function __construct(LLMInterface $llm, ?string $workspaceDir = null)
+    /**
+     * 添加一个 Hook
+     */
+    public function addHook(\App\Hook\HookInterface $hook): void
+    {
+        $this->hooks[] = $hook;
+    }
+
+    /**
+     * 触发所有注册的 Hook
+     */
+    private function triggerHooks(string $event, array $context): array
+    {
+        foreach ($this->hooks as $hook) {
+            // 调用 Hook，并更新上下文
+            $context = $hook->handle($event, $context);
+
+            // 如果 Hook 决定阻断流程，则立即返回
+            if (isset($context['decision']) && $context['decision'] === 'deny') {
+                echo "🛑 Hook 阻断流程: " . ($context['reason'] ?? '未知原因') . PHP_EOL;
+                return $context;
+            }
+        }
+        return $context;
+    }
+    private function shouldStop(array $context): bool
+    {
+        return isset($context['decision']) && $context['decision'] === 'deny';
+    }
+
+        public function __construct(\App\LLM\LLMInterface $llm, ?string $workspaceDir = null)
     {
         $this->llm = $llm;
-        $this->executor = new ShellExecutor();
+        $this->executor = new \App\Tools\ShellExecutor();
 
         // 动态获取项目根路径
         $this->projectRoot = realpath(__DIR__ . '/../../');
@@ -65,7 +108,35 @@ class Agent
         $this->agentsFile = $this->projectRoot . '/storage/AGENTS.md';
         $this->workspaceDir = $workspaceDir ?? $this->projectRoot . '/workspace';
 
+        // 初始化Web工具
+        $this->webSearch = new \App\Tools\WebSearch();
+        $this->webFetch = new \App\Tools\WebFetch();
+
         $this->ensureStorageDirectories();
+
+        // 添加权限相关的 Hook
+        $this->addPermissionHooks();
+    }
+
+    /**
+     * 添加权限相关的 Hook
+     */
+    private function addPermissionHooks(): void
+    {
+        $env = getenv('APP_ENV') ?: 'development';
+        $configFile = "config/permissions_{$env}.json";
+        echo "\n@@@@". $configFile ."". PHP_EOL;
+        var_dump(file_exists('../../'.$configFile),realpath(__DIR__.'/../../'.$configFile));
+        $configArray= json_decode(file_get_contents(__DIR__.'/../../'.$configFile), true);
+        // 主权限检查 Hook
+        $permissionHook = new \App\Hook\PermissionCheckHook([], $configArray['mode'], $configFile);
+        $this->addHook($permissionHook);
+
+        // 权限审计 Hook
+        $auditHook = new \App\Hook\PermissionAuditHook();
+        $this->addHook($auditHook);
+
+        error_log("[Agent] Added permission hooks for environment: {$env}");
     }
 
     /**
@@ -88,7 +159,8 @@ class Agent
 
     public function chat(string $sessionId, string $input, array &$messages = []): string
     {
-        $permissionChecker = $this->createPermissionChecker();
+        //上下文数据，包含事件相关的信息
+        $context = [];
 
         $messages = array_merge($messages, [['role' => 'user', 'content' => $input]]);
         $tools = $this->getToolsDefinition();
@@ -111,34 +183,53 @@ class Agent
                 return $decodedResponse['reply'] . "\n";
             }
             $messages[] = ['role' => 'assistant', 'content' => $decodedResponse['reply'], 'tool_calls' => ($decodedResponse['tool'])];
-            echo "执行工具:{$decodedResponse['tool'][0]['function']['name']},参数:{$decodedResponse['tool'][0]['function']['arguments']}\n";
-            $toolExecution = $this->executeTool($decodedResponse['tool'][0]['function'], $permissionChecker);
+            // echo "执行工具:{$decodedResponse['tool'][0]['function']['name']},参数:{$decodedResponse['tool'][0]['function']['arguments']}\n";
+            // --- 行动阶段 ---
+            $context['tool'] = $decodedResponse['tool'][0]['function'];
+            $context = $this->triggerHooks(\App\Hook\AgentEvent::PRE_ACTION, $context);
+            if ($this->shouldStop($context))
+                break;
 
+            // 检查是否需要用户确认
+            if (isset($context['decision']) && $context['decision'] === 'ask') {
+                var_dump($context);
+                echo "⚠️ 需要确认执行工具 {$context['tool']['name']},参数: " . json_encode($context['tool']['arguments'], JSON_UNESCAPED_UNICODE);
+                
+                $args = $context['tool']['arguments'] ?? '{}';
+                $decodedArgs = json_decode($args, true);
+                if (json_last_error() === JSON_ERROR_NONE && \is_array($decodedArgs)) {
+                    echo json_encode($decodedArgs, JSON_UNESCAPED_UNICODE) . PHP_EOL;
+                } else {
+                    echo $args . PHP_EOL;
+                }
+                echo "Allow? (y/n): ";
+                $userInput = fgets(STDIN);
+                if (trim($userInput) !== 'y') {
+                    $messages[] = [
+                        'role' => 'user',
+                        'content' => "[USER DENIED]: {$context['tool']['name']}"
+                    ];
+                    continue;
+                }
+            }
+
+            $toolExecution = $this->executeTool($decodedResponse['tool'][0]['function']);
+            $context['tool_execution'] = $toolExecution;
+            $context = $this->triggerHooks(\App\Hook\AgentEvent::POST_ACTION, $context);
             $messages[] = [
                 'role' => 'user',
                 'content' => "执行工具:{$toolExecution['tool_name']},结果返回:{$toolExecution['output']}"
             ];
 
-            echo "\n--- {$toolExecution['tool_name']}工具执行 ---\n";
-            $preview ='';//mb_substr($toolExecution['output'],0,100) ;
+            // echo "\n--- {$toolExecution['tool_name']}工具执行 ---\n";
+            $preview = '';//mb_substr($toolExecution['output'],0,100) ;
             // var_dump("执行工具:{$toolExecution['tool_name']},参数:{$toolExecution['params']},结果返回:{$preview}");
         }
 
         return "执行达到最大步骤限制，请检查逻辑。";
     }
 
-    /**
-     * 创建权限检查器
-     */
-    private function createPermissionChecker(): PermissionChecker
-    {
-        return new PermissionChecker(
-            [], // denyRules
-            [], // allowRules
-            'auto' // mode
-        );
-    }
-
+    
     /**
      * 获取工具定义
      */
@@ -148,7 +239,9 @@ class Agent
             $this->createBashTool(),
             $this->createReadFileTool(),
             $this->createWriteFileTool(),
-            $this->createEditFileTool()
+            $this->createEditFileTool(),
+            $this->createWebSearchTool(),
+            // $this->createWebFetchTool()
         ];
     }
 
@@ -249,9 +342,74 @@ class Agent
     }
 
     /**
+     * 创建Web搜索工具定义
+     */
+    private function createWebSearchTool(): array
+    {
+        return [
+            'type' => 'function',
+            'function' => [
+                'name' => 'web_search',
+                'description' => 'Search the web for information using various search engines (duckduckgo).',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'query' => [
+                            'type' => 'string',
+                            'description' => '搜索查询关键词'
+                        ],
+                        'limit' => [
+                            'type' => 'integer',
+                            'description' => '返回结果的最大数量（默认10，最大50）'
+                        ],
+                        'engine' => [
+                            'type' => 'string',
+                            'enum' => ['duckduckgo'],
+                            'description' => '使用的搜索引擎（默认duckduckgo）'
+                        ]
+                    ],
+                    'required' => ['query','engine']
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * 创建Web内容获取工具定义
+     */
+    private function createWebFetchTool(): array
+    {
+        return [
+            'type' => 'function',
+            'function' => [
+                'name' => 'web_fetch',
+                'description' => 'Fetch content from a URL and extract text.',
+                'parameters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'url' => [
+                            'type' => 'string',
+                            'description' => '要获取内容的URL'
+                        ],
+                        'extract_text' => [
+                            'type' => 'boolean',
+                            'description' => '是否提取文本内容（默认true）'
+                        ],
+                        'max_length' => [
+                            'type' => 'integer',
+                            'description' => '最大内容长度（字节，默认1MB）'
+                        ]
+                    ],
+                    'required' => ['url']
+                ]
+            ]
+        ];
+    }
+
+    /**
      * 执行工具调用
      */
-    private function executeTool(array $tool, PermissionChecker $permissionChecker): array
+    private function executeTool(array $tool): array
     {
         $params = json_decode($tool['arguments'], true) ?? [];
         $toolName = $tool['name'];
@@ -261,13 +419,19 @@ class Agent
                 $output = $this->executeReadFile($params);
                 break;
             case 'write_file':
-                $output = $this->executeWriteFile($params, $permissionChecker);
+                $output = $this->executeWriteFile($params);
                 break;
             case 'edit_file':
-                $output = $this->executeEditFile($params, $permissionChecker);
+                $output = $this->executeEditFile($params);
                 break;
             case 'bash':
-                $output = $this->executeBash($params, $permissionChecker);
+                $output = $this->executeBash($params);
+                break;
+            case 'web_search':
+                $output = $this->executeWebSearch($params);
+                break;
+            case 'web_fetch':
+                $output = $this->executeWebFetch($params);
                 break;
             default:
                 $output = "未知工具: {$toolName}";
@@ -307,19 +471,10 @@ class Agent
     /**
      * 执行写入文件操作
      */
-    private function executeWriteFile(array $params, PermissionChecker $permissionChecker): string
+    private function executeWriteFile(array $params): string
     {
         $filePath = $params['path'] ?? '';
         $content = $params['content'] ?? '';
-
-        $permissionCheck = $permissionChecker->checkPermission('write_file', [
-            'path' => $filePath,
-            'content' => $content
-        ]);
-
-        if ($permissionCheck['behavior'] === 'deny') {
-            return "权限被拒绝: {$permissionCheck['reason']}";
-        }
 
         $dir = dirname($filePath);
         if (!is_dir($dir) && !mkdir($dir, 0777, true)) {
@@ -337,25 +492,13 @@ class Agent
     /**
      * 执行编辑文件操作
      */
-    private function executeEditFile(array $params, PermissionChecker $permissionChecker): string
+    private function executeEditFile(array $params): string
     {
         $filePath = $params['path'] ?? '';
         $operation = $params['operation'] ?? '';
         $newContent = $params['new_content'] ?? '';
         $oldContent = $params['old_content'] ?? '';
         $lineNumber = $params['line_number'] ?? null;
-
-        $permissionCheck = $permissionChecker->checkPermission('edit_file', [
-            'path' => $filePath,
-            'operation' => $operation,
-            'new_content' => $newContent,
-            'old_content' => $oldContent,
-            'line_number' => $lineNumber
-        ]);
-
-        if ($permissionCheck['behavior'] === 'deny') {
-            return "权限被拒绝: {$permissionCheck['reason']}";
-        }
 
         if (!file_exists($filePath)) {
             return "错误：文件不存在 -> {$filePath}";
@@ -467,27 +610,56 @@ class Agent
     /**
      * 执行bash命令
      */
-    private function executeBash(array $params, PermissionChecker $permissionChecker): string
+    private function executeBash(array $params): string
     {
         $command = $params['command'] ?? '';
 
-        $permissionCheck = $permissionChecker->checkPermission('bash', [
-            'command' => $command
-        ]);
+        return (string) shell_exec($command . ' 2>&1');
+    }
 
-        if ($permissionCheck['behavior'] === 'deny') {
-            return "权限被拒绝: {$permissionCheck['reason']}";
+    /**
+     * 执行Web搜索操作
+     */
+    private function executeWebSearch(array $params): string
+    {
+        $query = $params['query'] ?? '';
+        $limit = $params['limit'] ?? 10;
+        $engine = $params['engine'] ?? 'google';
+
+        if (empty($query)) {
+            return "错误：搜索查询不能为空";
         }
 
-        if ($permissionCheck['behavior'] === 'ask') {
-            echo "  Allow? (y/n): ";
-            $userInput = fgets(STDIN);
-            if (trim($userInput) === 'n') {
-                return "[USER DENIED]:bash";
-            }
+        try {
+            $results = $this->webSearch->search($query, $limit, $engine);
+            return json_encode($results, JSON_UNESCAPED_UNICODE);
+        } catch (\Exception $e) {
+            return "Web搜索失败: " . $e->getMessage();
+        }
+    }
+
+    /**
+     * 执行Web内容获取操作
+     */
+    private function executeWebFetch(array $params): string
+    {
+        $url = $params['url'] ?? '';
+        $extractText = $params['extract_text'] ?? true;
+        $maxLength = $params['max_length'] ?? 1048576; // 1MB
+
+        if (empty($url)) {
+            return "错误：URL不能为空";
         }
 
-        return (string)shell_exec($command . ' 2>&1');
+        try {
+            $result = $this->webFetch->fetch($url, [
+                'extract_text' => $extractText,
+                'max_content_length' => $maxLength
+            ]);
+            return json_encode($result, JSON_UNESCAPED_UNICODE);
+        } catch (\Exception $e) {
+            return "Web内容获取失败: " . $e->getMessage();
+        }
     }
 
     /**
