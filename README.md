@@ -1,64 +1,74 @@
 # PHP-Nanobot 🤖
 
-一个基于 Mini-OpenClaw 架构的 PHP 智能 Agent 系统，能够与多种大语言模型(LLM)交互并安全执行系统工具操作。
+> 一个基于 Mini-OpenClaw 架构的 PHP 智能 Agent 系统，能够与多种大语言模型(LLM)交互并安全执行系统工具操作。
 
-## ✨ 特性
+## ✨ 核心特性
 
-- **多模型支持**: 无缝集成 Ollama、智谱AI、OpenAI、LongCat 等多种 LLM
-- **安全执行**: 严格的命令过滤和权限控制，防止危险操作
-- **长期记忆**: 自动保存对话历史，支持上下文感知
-- **多通道**: 支持 CLI 终端和钉钉机器人
-- **工具丰富**: 内置文件操作、bash 命令、编辑器等实用工具
-- **协程优化**: 可选的 Swoole 协程支持，提升并发性能
-- **中文友好**: 完善的中文编码处理
+- 🚀 **多模型支持**: 无缝集成 Ollama、智谱AI、OpenAI、LongCat 等多种 LLM
+- 🔒 **安全执行**: 严格的命令过滤和权限控制，防止危险操作
+- 🧠 **长期记忆**: 自动保存对话历史，支持上下文感知
+- 📱 **多通道**: 支持 CLI 终端和钉钉机器人
+- 🛠️ **工具丰富**: 内置文件操作、bash 命令、编辑器等实用工具
+- ⚡ **协程优化**: 可选的 Swoole 协程支持，提升并发性能
 
-## 🏗️ 架构
+## 🏗️ 项目架构
 
 ```
 nanobot-php/
-├── bin/nanobot          # 主入口文件
+├── bin/nanobot              # 主入口文件
 ├── src/
-│   ├── Core/Agent.php   # 核心代理类
-│   ├── LLM/             # 大语言模型适配器
-│   ├── Channels/        # 通信通道
-│   ├── Tools/           # 系统工具执行器
-│   └── Skills/          # 技能管理器
-├── storage/             # 数据存储
-│   ├── AGENTS.md        # 系统提示词
-│   └── memory/          # 长期记忆
-├── config.json          # 配置文件
-└── vendor/              # Composer 依赖
+│   ├── Core/Agent.php       # 核心代理类
+│   ├── LLM/                 # 大语言模型适配器
+│   ├── Channels/            # 通信通道
+│   ├── Tools/               # 系统工具执行器
+│   └── Skills/              # 技能管理器
+├── storage/                 # 数据存储
+│   ├── AGENTS.md            # 系统提示词
+│   ├── memory/              # 长期记忆
+│   └── context/             # 会话上下文
+├── config.json              # 配置文件
+├── composer.json            # 项目依赖
+└── vendor/                  # Composer 依赖
 ```
 
-## 📋 要求
+## 📋 系统要求
 
-- PHP >= 7.4
-- Composer
-- curl 扩展
-- mbstring 扩展（推荐）
-- Swoole 扩展（可选，用于协程支持）
+### 必需组件
+- **PHP >= 7.4**
+- **Composer** (PHP 包管理器)
+- **curl** 扩展
+- **mbstring** 扩展 (推荐，用于中文处理)
 
-## 🚀 安装
+### 可选组件
+- **Swoole** 扩展 (可选，用于协程实现加载动画和钉钉机器人长连接)
 
-1. **克隆项目**
+## 🚀 快速开始
+
+### 1. 克隆项目
 ```bash
-git clone <repository-url>
+git clone git@github.com:mygit-william/nanobot-php.git
 cd nanobot-php
 ```
 
-2. **安装依赖**
+### 2. 安装依赖
 ```bash
 composer install
 ```
 
-3. **配置项目**
+### 3. 配置项目
 ```bash
+# 复制配置模板
 cp config.json.example config.json
-# 编辑 config.json，配置你的 API 密钥和模型参数
+
+# 编辑配置文件
+nano config.json  # 或使用你喜欢的编辑器
 ```
 
-## 🛠️ 配置
+> 💡 **提示**: 在配置文件中设置你的 API 密钥和模型参数
 
+## 🛠️ 配置详解
+
+### 基础配置
 编辑 `config.json` 配置文件：
 
 ```json
@@ -99,29 +109,45 @@ cp config.json.example config.json
 }
 ```
 
-## 💻 使用
+### 配置说明
 
-### CLI 模式
+#### LLM 提供商配置
+- **Ollama**: 本地部署的开源模型
+- **智谱AI**: 国内领先的 AI 服务
+- **OpenAI**: 国际知名的 AI 服务
 
+#### 通道配置
+- **钉钉机器人**: 企业级即时通讯集成
+
+## 💻 使用指南
+
+### 🖥️ CLI 模式
 ```bash
 php bin/nanobot cli
 ```
 
-### 钉钉服务模式
-
+### 🤖 钉钉服务模式
 ```bash
 php bin/nanobot serve
 ```
 
-### 交互命令
-
-- 输入 `exit` 退出程序
+### 🎯 交互命令
+- `exit` - 退出程序
 - 支持中文输入，自动编码转换
 - 智能提示当前工作目录和系统信息
 
+### 📝 使用示例
+```bash
+# 启动 CLI 模式
+php bin/nanobot cli
+
+# 在钉钉群中直接与机器人对话
+# 无需额外操作，自动接收和回复消息
+```
+
 ## 🔧 核心功能
 
-### LLM 适配器系统
+### 🧠 LLM 适配器系统
 
 支持多种大语言模型，通过统一接口调用：
 
@@ -131,14 +157,14 @@ $llm = $llmFactory->make(); // 使用默认模型
 $response = $llm->chat($messages, $tools);
 ```
 
-### 智能代理
+### 🤖 智能代理
 
 ```php
 $agent = new Agent($llm);
 $reply = $agent->chat('session-id', '用户输入', $messages);
 ```
 
-### 安全命令执行
+### 🔒 安全命令执行
 
 ```php
 $executor = new ShellExecutor();
@@ -147,6 +173,8 @@ $output = $executor->exec('ls -la'); // 只允许白名单命令
 
 ## 🔒 安全特性
 
+### 🛡️ 多层安全防护
+
 - **命令白名单**: 只允许预定义的安全命令
 - **黑名单过滤**: 阻止 `rm -rf /`, `dd`, `sudo`, `ssh` 等危险操作
 - **输出限制**: 最大 1MB 输出防止恶意命令
@@ -154,15 +182,30 @@ $output = $executor->exec('ls -la'); // 只允许白名单命令
 - **路径验证**: 防止目录遍历攻击
 - **敏感信息清理**: 日志中自动屏蔽密码、API 密钥
 
+### ⚠️ 安全警告
+> 请确保只在受信任的环境中运行 Nanobot，避免在生产环境中执行危险操作。
+
 ## 📁 存储结构
 
-- `storage/AGENTS.md`: 系统提示词和 Agent 行为准则
-- `storage/memory/long_term_memory.json`: 长期记忆存储
-- `storage/context/`: 会话上下文存储目录
+```
+storage/
+├── AGENTS.md                    # 系统提示词和 Agent 行为准则
+├── memory/
+│   └── long_term_memory.json    # 长期记忆存储
+└── context/                     # 会话上下文存储目录
+    ├── session_1.json
+    ├── session_2.json
+    └── ...
+```
 
-## 🧪 开发
+### 存储说明
+- **AGENTS.md**: 定义 Agent 的行为准则和系统提示
+- **long_term_memory.json**: 持久化存储对话历史和重要信息
+- **context/**: 每个会话的独立上下文存储
 
-### 添加新的 LLM 适配器
+## 🧪 开发指南
+
+### 🚀 添加新的 LLM 适配器
 
 1. 实现 `LLMInterface` 接口
 2. 在 `LLMFactory` 中注册新的驱动类型
@@ -171,30 +214,67 @@ $output = $executor->exec('ls -la'); // 只允许白名单命令
 class MyLLMAdapter implements LLMInterface {
     public function chat(array &$messages, array $tools = []): string {
         // 实现调用逻辑
+        return $response;
     }
 }
 ```
 
-### 添加新的通信通道
+### 📡 添加新的通信通道
 
 实现 `ChannelInterface` 接口：
 
 ```php
 class MyChannel implements ChannelInterface {
-    public function getName(): string { return 'my-channel'; }
-    public function receive(array $conservation = []): void { /* ... */ }
-    public function send(string $sessionId, string $message): void { /* ... */ }
+    public function getName(): string { 
+        return 'my-channel'; 
+    }
+    
+    public function receive(array $conservation = []): void { 
+        // 实现消息接收逻辑
+    }
+    
+    public function send(string $sessionId, string $message): void { 
+        // 实现消息发送逻辑
+    }
 }
 ```
 
+### 📋 开发规范
+- 遵循 PSR-12 编码规范
+- 为新功能编写单元测试
+- 更新相关文档
+
 ## 📄 许可证
 
-MIT License
+[MIT License](LICENSE) - 详见 LICENSE 文件
 
-## 🤝 贡献
+## 🤝 贡献指南
 
-欢迎提交 Issue 和 Pull Request！
+我们欢迎各种形式的贡献！
+
+### 🐛 报告问题
+- 使用 GitHub Issues 报告 bug
+- 提供详细的复现步骤和环境信息
+
+### 💡 功能建议
+- 在 Issues 中提出新功能建议
+- 说明使用场景和期望效果
+
+### 🔄 代码贡献
+1. Fork 项目
+2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 创建 Pull Request
 
 ## 📞 支持
 
-如有问题或建议，请在 GitHub Issues 中反馈。
+### 📖 文档
+- [API 文档](docs/api.md) (待完善)
+- [配置指南](docs/configuration.md) (待完善)
+
+### 🆘 获取帮助
+如有问题或建议，请在 [GitHub Issues](https://github.com/mygit-william/nanobot-php/issues) 中反馈。
+
+### 🌟 Star 项目
+如果这个项目对你有帮助，请给我们一个 Star！⭐
