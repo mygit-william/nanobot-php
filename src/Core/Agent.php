@@ -130,16 +130,12 @@ class Agent
         echo "\n@@@@" . $configFilePath . "" . PHP_EOL;
         var_dump(file_exists(__DIR__ . '/../../' . $configFilePath), realpath(__DIR__ . '/../../' . $configFilePath));
         $configContent = file_get_contents(__DIR__ . '/../../' . $configFilePath);
+        if ($configContent === false) {
+            throw new \RuntimeException("无法读取权限配置文件: {$configFilePath}");
+        }
         $configArray = json_decode($configContent, true);
         if ($configArray === null && json_last_error() !== JSON_ERROR_NONE) {
             throw new \RuntimeException("权限配置文件解析失败: " . json_last_error_msg());
-        }
-        // 主权限检查 Hook
-        $permissionHook = new \App\Hook\PermissionCheckHook([], $configArray['mode'], $configFilePath);
-        $this->addHook($permissionHook);
-        $configContent = file_get_contents($configFilePath);
-        if ($configContent === false) {
-            throw new \RuntimeException("无法读取权限配置文件: {$configFilePath}");
         }
         $configArray = json_decode($configContent, true);
         if (!is_array($configArray) || !isset($configArray['mode'])) {
@@ -174,88 +170,126 @@ class Agent
         }
     }
 
-    public function chat(string $sessionId, string $input, array &$messages = []): string
-    {
-        //上下文数据，包含事件相关的信息
-        $context = [];
+/**
+ * 核心对话循环（支持多工具调用）
+ */
+public function chat(string $sessionId, string $input, array &$messages = []): string
+{
+    $context = [];
+    $messages = array_merge($messages, [['role' => 'user', 'content' => $input]]);
+    $tools = $this->toolManager->getFunctionDefinitions();
 
-        $messages = array_merge($messages, [['role' => 'user', 'content' => $input]]);
-        $tools = $this->toolManager->getFunctionDefinitions();
-        // var_dump($tools);die;
+    $step = 0;
+    while ($step < self::MAX_EXECUTION_STEPS) {
+        $step++;
+        $response = $this->llm->chat($messages, $tools);
+        $decodedResponse = json_decode($response, true);
 
-        $step = 0;
-        while ($step < self::MAX_EXECUTION_STEPS) {
-            $step++;
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \RuntimeException('LLM响应解析失败: ' . json_last_error_msg());
+        }
 
-            $response = $this->llm->chat($messages, $tools);
-            $decodedResponse = json_decode($response, true);
+        // 如果没有工具调用，直接返回回复
+        if (empty($decodedResponse['tool'])) {
+            $this->saveToLongTermMemory($sessionId, $input, $decodedResponse['reply']);
+            return $decodedResponse['reply'] . "\n";
+        }
 
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new \RuntimeException('LLM响应解析失败: ' . json_last_error_msg());
-            }
+        // --- 收集工具调用 ---
+        // 注意：这里不再只取第一个，而是处理所有工具
+        $toolCalls = $decodedResponse['tool']; // 假设这是一个数组
 
+        // 1. 构建 Assistant 消息，包含所有的 tool_calls
+        $messages[] = [
+            'role' => 'assistant',
+            'content' => $decodedResponse['reply'] ?? null, // 如果有思考内容可以保留
+            'tool_calls' => $toolCalls
+        ];
 
-            if (empty($decodedResponse['tool'])) {
+        // 2. 准备收集工具执行结果的数组
+        // 这个数组的顺序必须和 toolCalls 的顺序严格对应
+        $toolResponses = [];
 
-                $this->saveToLongTermMemory($sessionId, $input, $decodedResponse['reply']);
-                return $decodedResponse['reply'] . "\n";
-            }
-            $messages[] = ['role' => 'assistant', 'content' => $decodedResponse['reply'], 'tool_calls' => ($decodedResponse['tool'])];
-            // echo "执行工具:{$decodedResponse['tool'][0]['function']['name']},参数:{$decodedResponse['tool'][0]['function']['arguments']}\n";
-            // --- 行动阶段 ---
-            $context['tool'] = $decodedResponse['tool'][0]['function'];
-            if (count($decodedResponse['tool']) > 1) {
-                throw new \RuntimeException('当前版本仅支持单工具调用，但LLM返回了多个工具调用');
-            }
+        // 3. 遍历所有工具调用并执行
+        foreach ($toolCalls as $index => $toolCall) {
+            $context['tool'] = $toolCall['function'];
+
+            // --- Hook 处理 (PRE_ACTION) ---
+            // 注意：这里如果 Hook 阻断，通常会阻断整个流程。
+            // 如果你需要更精细的控制（比如只阻断某个工具），需要修改 Hook 逻辑。
             $context = $this->triggerHooks(\App\Hook\AgentEvent::PRE_ACTION, $context);
-            if ($this->shouldStop($context))
-                break;
+            if ($this->shouldStop($context)) {
+                 $toolResponses[] = [
+                        'role' => 'tool',
+                        'tool_call_id' => $toolCall['id'], // 需要确保 toolCall 中有 id
+                        'name' => $context['tool']['name'],
+                        'content' => '系统拒绝执行该操作。',
+                    ];
+                    continue; // 跳过执行，继续下一个工具
+                // 如果 Hook 决定阻断，我们可以选择跳出循环或标记该工具失败
+                // 这里简单处理，直接跳出，不执行任何工具
+                // 你也可以在这里构建一个“被拒绝”的响应加入 $toolResponses
+                break 2; // 跳出 foreach 并跳到 while 循环末尾
+            }
 
-            // 检查是否需要用户确认
+            // --- 用户确认逻辑 ---
+            // 如果配置了需要确认
             if (isset($context['decision']) && $context['decision'] === 'ask') {
-                var_dump($context);
-                echo "⚠️ 需要确认执行工具 {$context['tool']['name']},参数: " . json_encode($context['tool']['arguments'], JSON_UNESCAPED_UNICODE);
-
-                $args = $context['tool']['arguments'] ?? '{}';
-                $decodedArgs = json_decode($args, true);
-                if (json_last_error() === JSON_ERROR_NONE && \is_array($decodedArgs)) {
-                    echo json_encode($decodedArgs, JSON_UNESCAPED_UNICODE) . PHP_EOL;
-                } else {
-                    echo $args . PHP_EOL;
-                }
+                echo "⚠️ 需要确认执行工具 {$context['tool']['name']}\n";
                 echo "Allow? (y/n): ";
                 $userInput = fgets(STDIN);
                 if (trim($userInput) !== 'y') {
-                    $messages[] = [
-                        'role' => 'user',
-                        'content' => "[USER DENIED]: {$context['tool']['name']}"
+                    // 用户拒绝，构建一个错误响应给 LLM
+                    $toolResponses[] = [
+                        'role' => 'tool',
+                        'tool_call_id' => $toolCall['id'], // 需要确保 toolCall 中有 id
+                        'name' => $context['tool']['name'],
+                        'content' => '用户手动确认不想执行该操作。',
                     ];
-                    continue;
-                } 
+                    continue; // 跳过执行，继续下一个工具
+                }
             }
-            $tool = $decodedResponse['tool'][0]['function'];
-            $params = json_decode($tool['arguments'], true) ?? [];
-            $toolName = $tool['name'];
-            $output = $this->toolManager->run($toolName, $params);// ;$this->toolExecutor->executeTool($decodedResponse['tool'][0]['function']);
-            $toolExecution = [
+
+            // --- 执行工具 ---
+            $toolName = $toolCall['function']['name'];
+            $params = json_decode($toolCall['function']['arguments'], true) ?? [];
+
+            try {
+                $output = $this->toolManager->run($toolName, $params);
+            } catch (\Exception $e) {
+                $output = 'Error: ' . $e->getMessage();
+            }
+
+            // --- Hook 处理 (POST_ACTION) ---
+            $context['tool_execution'] = [
                 'tool_name' => $toolName,
-                'params' => json_encode($params),
+                'params' => json_encode($params, JSON_UNESCAPED_UNICODE),
                 'output' => $output
             ];
-            $context['tool_execution'] = $toolExecution;
             $context = $this->triggerHooks(\App\Hook\AgentEvent::POST_ACTION, $context);
-            $messages[] = [
-                'role' => 'user',
-                'content' => "执行工具:{$toolExecution['tool_name']},结果返回:{$toolExecution['output']}"
-            ];
 
-            // echo "\n--- {$toolExecution['tool_name']}工具执行 ---\n";
-            $preview = '';//mb_substr($toolExecution['output'],0,100) ;
-            // var_dump("执行工具:{$toolExecution['tool_name']},参数:{$toolExecution['params']},结果返回:{$preview}");
+            // --- 收集结果 ---
+            // OpenAI 格式要求返回 tool_call_id
+            $toolResponses[] = [
+                'role' => 'tool',
+                'tool_call_id' => $toolCall['id'] ?? "call_$index", // 如果原始数据没有 id，我们生成一个
+                'name' => $toolName,
+                'content' => $output,
+            ];
         }
 
-        return "执行达到最大步骤限制，请检查逻辑。";
+        // --- 将所有工具结果回传给模型 ---
+        // 将收集到的所有结果追加到 messages 中
+        $messages = array_merge($messages, $toolResponses);
+
+        // 注意：这里不要 break，而是继续 while 循环
+        // 让模型根据工具返回的结果再次进行推理
+        // 下一次循环中，$this->llm->chat 会接收到包含 tool_responses 的 messages
+        // 模型可能会再次调用工具，或者最终输出结果
     }
+
+    return "执行达到最大步骤限制，请检查逻辑。";
+}
 
 
     /**

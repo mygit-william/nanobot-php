@@ -175,20 +175,5 @@ class EditFile extends Tool
         return "文件编辑成功(插入操作)，已在第 {$lineNumber} 行插入内容";
     }
 
-    /**
-     * 执行 bash 命令
-     *
-     * @param array $params 参数数组
-     * @return string 命令输出
-     */
-    private function executeBash(array $params): string
-    {
-        $command = $params['command'] ?? '';
-
-        return (string) shell_exec($command . ' 2>&1');
-    }
-
-
-
 }
 

@@ -8,12 +8,12 @@ class WriteFile extends Tool
         $this->desc = 'Write content to file.For partial edits, prefer edit_file instead.The path must be absolute path.';
     }
 
-    /**
+    /**  
      * @param string $path 要写入的文件的绝对路径
      * @param string $content 要写入的内容
      * @return string 执行结果
      */
-    // 定义参数类型，Manager 会自动识别
+
     public function execute(string $path, string $content): string
     {
 

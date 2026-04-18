@@ -103,14 +103,25 @@ class ToolManager
     private function getParamDescription(ReflectionParameter $param): string
     {
         $method = $param->getDeclaringFunction();
-        if ($method instanceof ReflectionMethod) {
+        // var_dump($method,'method');die;
+        if ($method instanceof \ReflectionMethod) {
             $docComment = $method->getDocComment();
             if ($docComment) {
                 $lines = explode("\n", $docComment);
+                $paramName = $param->getName();
                 foreach ($lines as $line) {
-                    $line = trim($line, " \t*/");
-                    if (preg_match('/@param\s+\w+\s+\$' . preg_quote($param->getName()) . '\s+(.+)/', $line, $matches)) {
-                        return trim($matches[1]);
+                    // 清理行内容，移除 * 和空格
+                    $line = trim($line);
+                    $line = preg_replace('/^\s*\*\s*/', '', $line);
+                    $line = trim($line);
+
+                    // 匹配 @param 标记，格式如：@param string $path 描述
+                    // 支持可选的类型提示、空格变化
+                        $pattern = '/^@param(?:\s+\w+)?\s+\$' . preg_quote($paramName) . '(?:\s+(.+))?$/';
+                    if (preg_match($pattern, $line, $matches)) {
+                        if (!empty($matches[1])) {
+                            return trim($matches[1]);
+                        }
                     }
                 }
             }
